@@ -1,0 +1,32 @@
+name: Build Production Plan
+
+on:
+  workflow_dispatch:  # allows manual run
+
+jobs:
+  build-plan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl
+
+      - name: Run max build script
+        run: |
+          python compute_max_build.py
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: FG_max_build_plan
+          path: FG_max_build_plan_greedy.xlsx
