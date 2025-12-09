@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 EXCEL_PATH = "inventory_bom.xlsx"
-INVENTORY_SHEET = "Dec 8 Inventory"
+INVENTORY_SHEET = "Updated Inventory"
 BOM_SHEET = "Bill of Material"
 OUTPUT_PATH = "FG_max_build_plan_greedy.xlsx"
 
@@ -29,8 +29,13 @@ def get_weight(fg):
         return 1.0
 
 # --- Inventory: SKU + Qty on Stock ---
-inv = inv_df[['SKU', 'Qty on Stock']].dropna()
-inv = inv.groupby('SKU', as_index=True)['Qty on Stock'].sum()
+# Include Item family column (not used in calculation yet)
+inv = inv_df[['SKU', 'Qty on Stock', 'Item family']].dropna(subset=['SKU'])
+
+# Group quantities by SKU (Item family is not aggregated)
+inv_qty = inv.groupby('SKU', as_index=True)['Qty on Stock'].sum()
+inv_map = inv_qty.to_dict()
+remaining = {c: float(inv_map.get(c, 0.0)) for c in components}
 
 # --- BOM: FG + SKU + Units in FG ---
 bom = bom_df[['FG', 'SKU', 'Units in FG']].dropna()
