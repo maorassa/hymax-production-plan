@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 EXCEL_PATH = "inventory_bom.xlsx"
-INVENTORY_SHEET = "Updated Inventory"
+INVENTORY_SHEET = "Updated Inventory"   # <- new sheet name
 BOM_SHEET = "Bill of Material"
 OUTPUT_PATH = "FG_max_build_plan_greedy.xlsx"
 
@@ -29,21 +29,16 @@ def get_weight(fg):
         return 1.0
 
 # --- Inventory: SKU + Qty on Stock ---
-# Include Item family column (not used in calculation yet)
-inv = inv_df[['SKU', 'Qty on Stock', 'Item family']].dropna(subset=['SKU'])
-
-# Group quantities by SKU (Item family is not aggregated)
-inv_qty = inv.groupby('SKU', as_index=True)['Qty on Stock'].sum()
-inv_map = inv_qty.to_dict()
-remaining = {c: float(inv_map.get(c, 0.0)) for c in components}
+# (Item family column exists but is not used yet)
+inv = inv_df[['SKU', 'Qty on Stock']].dropna()
+inv = inv.groupby('SKU', as_index=True)['Qty on Stock'].sum()
+inv_map = inv.to_dict()
 
 # --- BOM: FG + SKU + Units in FG ---
 bom = bom_df[['FG', 'SKU', 'Units in FG']].dropna()
-
 fgs = bom['FG'].unique()
 components = bom['SKU'].unique()
 
-inv_map = inv.to_dict()
 remaining = {c: float(inv_map.get(c, 0.0)) for c in components}
 
 # FG -> {component: units}
@@ -99,9 +94,9 @@ res['FG Description'] = res['FG'].map(fg_desc_map)
 res['Weight'] = res['FG'].apply(get_weight)
 
 # Reorder columns and sort
-res = res[['FG', 'FG Description', 'Weight', 'MaxQty_greedy']].sort_values(
-    'MaxQty_greedy', ascending=False
-).reset_index(drop=True)
+res = res[['FG', 'FG Description', 'Weight', 'MaxQty_greedy']] \
+       .sort_values('MaxQty_greedy', ascending=False) \
+       .reset_index(drop=True)
 
 print("Saving result...")
 res.to_excel(OUTPUT_PATH, sheet_name="MaxBuild", index=False)
