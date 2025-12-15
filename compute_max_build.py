@@ -126,6 +126,58 @@ fg_check = pd.DataFrame({
 
 # 3) Bottleneck list: lowest remaining SKUs (where remaining is small)
 bottlenecks = qa.sort_values("InventoryRemaining", ascending=True).head(30)
+# --- Limiting items analysis (why each FG can't build +1) ---
+limit_rows = []
+
+for fg in fgs:
+    req = usage.get(fg, {})
+    if not req:
+        continue
+
+    blockers = []
+    for c, u in req.items():
+        u = float(u)
+        if u <= 0:
+            continue
+        rem = float(remaining.get(c, 0.0))
+        shortage = u - rem
+        if shortage > 1e-9:
+            blockers.append((c, u, rem, shortage))
+
+    # keep only if FG is actually blocked
+    blockers.sort(key=lambda x: x[3], reverse=True)  # biggest shortage first
+    for rank, (c, u, rem, shortage) in enumerate(blockers[:10], start=1):  # top 10 per FG
+        limit_rows.append({
+            "FG": fg,
+            "FG Description": fg_desc_map.get(fg, ""),
+            "Rank": rank,
+            "LimitingSKU": c,
+            "UnitsNeeded_For+1": u,
+            "Remaining": rem,
+            "Shortage": shortage
+        })
+
+fg_limits = pd.DataFrame(limit_rows)
+
+# --- Aggregate limiting SKUs (across all FGs) ---
+if not fg_limits.empty:
+    agg_limits = (
+        fg_limits.groupby("LimitingSKU", as_index=False)
+        .agg(
+            FGsBlocked=("FG", "nunique"),
+            TotalShortage=("Shortage", "sum"),
+            AvgShortage=("Shortage", "mean")
+        )
+        .merge(
+            qa[["SKU", "InventoryRemaining"]],
+            left_on="LimitingSKU", right_on="SKU", how="left"
+        )
+        .drop(columns=["SKU"])
+        .sort_values(["FGsBlocked", "TotalShortage"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+else:
+    agg_limits = pd.DataFrame(columns=["LimitingSKU", "FGsBlocked", "TotalShortage", "AvgShortage", "InventoryRemaining"])
 
 # --- Write output workbook with two tabs (+ extra QA sections) ---
 print("Saving result with QA tab...")
@@ -148,6 +200,22 @@ with pd.ExcelWriter(OUTPUT_PATH, engine="openpyxl") as writer:
     fg_check.to_excel(writer, sheet_name="QA", index=False, startrow=summary_row + 5)
 
     # Write bottleneck section
-    bottlenecks.to_excel(writer, sheet_name="QA", index=False, startrow=summary_row + 5 + len(fg_check) + 3)
+    # Write bottleneck section
+start_bott = summary_row + 5 + len(fg_check) + 3
+bottlenecks.to_excel(writer, sheet_name="QA", index=False, startrow=start_bott)
+
+# Write aggregate limiting SKUs section
+start_agg = start_bott + len(bottlenecks) + 3
+pd.DataFrame({"Section": ["Aggregate limiting SKUs (block most FGs)"]}).to_excel(
+    writer, sheet_name="QA", index=False, startrow=start_agg, header=False
+)
+agg_limits.to_excel(writer, sheet_name="QA", index=False, startrow=start_agg + 1)
+
+# Write per-FG limiting details section
+start_fg = start_agg + 1 + len(agg_limits) + 3
+pd.DataFrame({"Section": ["Per-FG limiting SKUs (top blockers for +1 unit)"]}).to_excel(
+    writer, sheet_name="QA", index=False, startrow=start_fg, header=False
+)
+fg_limits.to_excel(writer, sheet_name="QA", index=False, startrow=start_fg + 1)
 
 print("Done.")
